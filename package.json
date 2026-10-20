@@ -16,6 +16,7 @@
   "scripts": {
     "start": "node bin/design-extract.js",
     "check-plugin": "node scripts/check-plugin-version.mjs",
+    "build:figma-plugin": "node scripts/build-figma-plugin.mjs",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {

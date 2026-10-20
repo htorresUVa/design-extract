@@ -41,6 +41,10 @@
       <textarea id="json" placeholder='{ "collections": [...] }'></textarea>
     </div>
 
+    <label style="display: flex; gap: 6px; align-items: center; margin-top: 12px; font-weight: 400;">
+      <input type="checkbox" id="components" /> Also create Button component
+    </label>
+
     <div class="row">
       <button id="run">Import tokens</button>
       <button id="cancel" class="secondary">Close</button>
@@ -63,6 +67,7 @@
       );
 
       const status = document.getElementById("status");
+      const wantComponents = () => document.getElementById("components").checked;
       document.getElementById("cancel").onclick = () => parent.postMessage({ pluginMessage: { type: "cancel" } }, "*");
 
       document.getElementById("run").onclick = async () => {
@@ -73,7 +78,7 @@
           if (!raw) { status.textContent = "Paste the Figma Variables JSON first."; return; }
           try {
             const parsed = JSON.parse(raw);
-            parent.postMessage({ pluginMessage: { type: "import", data: parsed } }, "*");
+            parent.postMessage({ pluginMessage: { type: "import", data: parsed, components: wantComponents() } }, "*");
           } catch (e) { status.textContent = "Invalid JSON: " + e.message; }
         } else {
           const url = document.getElementById("url").value.trim();
@@ -82,7 +87,7 @@
             const res = await fetch(`https://designlang.manavaryasingh.com/api/extract?format=figma&url=${encodeURIComponent(url)}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
-            parent.postMessage({ pluginMessage: { type: "import", data } }, "*");
+            parent.postMessage({ pluginMessage: { type: "import", data, components: wantComponents() } }, "*");
           } catch (e) {
             status.textContent = "Failed: " + e.message + ". Try pasting JSON instead.";
           }
@@ -92,7 +97,10 @@
       onmessage = (e) => {
         const msg = e.data.pluginMessage;
         if (!msg) return;
-        if (msg.type === "done") status.textContent = `Imported ${msg.variableCount} variables across ${msg.collectionCount} collections.`;
+        if (msg.type === "done") {
+          status.textContent = `Imported ${msg.variableCount} variables across ${msg.collectionCount} collections, ${msg.textStyleCount || 0} text styles, ${msg.effectStyleCount || 0} effect styles.`;
+          if (msg.fontFallbacks && msg.fontFallbacks.length) status.textContent += ` ${msg.fontFallbacks.length} text styles fell back to Inter (brand font not installed).`;
+        }
         if (msg.type === "error") status.textContent = "Error: " + msg.message;
       };
     </script>
