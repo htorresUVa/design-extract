@@ -64,6 +64,11 @@ const mockDesign = {
     ],
     body: { size: 16, weight: '400', lineHeight: '1.5', letterSpacing: 'normal', tags: ['p'], count: 60 },
     weights: [{ weight: '400', count: 60 }, { weight: '600', count: 12 }, { weight: '700', count: 13 }],
+    roleScale: [
+      { size: 48, weight: '700', lineHeight: '1.2', letterSpacing: '-0.02em', role: 'h1' },
+      { size: 24, weight: '600', lineHeight: 'normal', letterSpacing: 'normal', role: 'h3' },
+      { size: 16, weight: '400', lineHeight: '24px', letterSpacing: 'normal', role: 'body' },
+    ],
   },
   spacing: {
     base: 4,
@@ -73,8 +78,9 @@ const mockDesign = {
   },
   shadows: {
     values: [
-      { raw: '0 1px 3px rgba(0,0,0,0.1)', blur: 3, inset: false, label: 'sm' },
+      { raw: '0 1px 3px rgba(0,0,0,0.1)', blur: 3, inset: false, label: 'sm', layers: [{ offsetX: 0, offsetY: 1, blur: 3, spread: 0, color: 'rgba(0,0,0,0.1)', inset: false }] },
       { raw: '0 4px 12px rgba(0,0,0,0.15)', blur: 12, inset: false, label: 'md' },
+      { raw: 'inset 0 2px 4px rgba(0,0,0,0.2)', blur: 4, inset: true, label: 'inner', layers: [{ offsetX: 0, offsetY: 2, blur: 4, spread: 0, color: 'rgba(0,0,0,0.2)', inset: true }] },
     ],
   },
   borders: {
@@ -102,6 +108,10 @@ const mockDesign = {
     buttons: {
       count: 10,
       baseStyle: { backgroundColor: '#0066cc', color: '#ffffff', borderRadius: '4px', fontSize: '14px' },
+      variants: [
+        { variant: 'primary', backgroundColor: 'rgb(0, 102, 204)', count: 8, style: { color: 'rgb(255, 255, 255)', fontSize: '14px', fontWeight: '500', paddingTop: '10px', paddingRight: '20px', borderRadius: '4px' } },
+        { variant: 'ghost', backgroundColor: 'rgba(0, 0, 0, 0)', count: 2, style: { color: 'rgb(18, 52, 86)', fontSize: '14px', fontWeight: '500', paddingTop: '10px', paddingRight: '20px', borderRadius: '4px' } },
+      ],
     },
   },
   accessibility: { score: 90, passCount: 45, failCount: 5, totalPairs: 50, pairs: [] },
@@ -444,6 +454,23 @@ describe('formatPreview', () => {
 // ── formatFigma ─────────────────────────────────────────────────
 
 describe('formatFigma', () => {
+  it('emits only names Figma accepts: no "." in variables, no 0px sizes or styles', () => {
+    const design = { ...mockDesign, typography: { ...mockDesign.typography, scale: [
+      { size: 13.3333, weight: '400', lineHeight: 'normal' },
+      { size: 0, weight: '400', lineHeight: '22px' },
+      { size: 16, weight: '400', lineHeight: '24px' },
+    ], roleScale: [
+      { role: 'body', size: 16, weight: '400', lineHeight: '24px' },
+      { role: 'micro', size: 0, weight: '400', lineHeight: '22px' },
+    ] } };
+    const parsed = JSON.parse(formatFigma(design));
+    const names = parsed.collections.flatMap(c => c.variables.map(v => v.name));
+    assert.ok(names.every(n => !n.includes('.')), names.filter(n => n.includes('.')).join());
+    assert.ok(names.includes('font/size/13_33'));
+    assert.ok(!names.some(n => n.startsWith('font/size/0')));
+    assert.ok(parsed.textStyles.every(t => t.fontSize >= 1));
+  });
+
   it('returns valid JSON', () => {
     const result = formatFigma(mockDesign);
     const parsed = JSON.parse(result);
@@ -489,6 +516,94 @@ describe('formatFigma', () => {
     const spacing = parsed.collections.find(c => c.name === 'Spacing');
     const radiusVars = spacing.variables.filter(v => v.name.startsWith('radius/'));
     assert.ok(radiusVars.length > 0);
+  });
+
+  const withDark = () => ({
+    ...mockDesign,
+    darkMode: { colors: {
+      primary: { hex: '#3399ff' }, secondary: { hex: '#ff9933' }, accent: { hex: '#33ff99' },
+      neutrals: [{ hex: '#eeeeee' }, { hex: '#cccccc' }], backgrounds: ['#000000', '#111111'], text: ['#ffffff', '#cccccc'],
+    } },
+  });
+  const rgbHex = (c) => '#' + [c.r, c.g, c.b].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+
+  it('uses the dark-mode accent in the dark mode', () => {
+    const brand = JSON.parse(formatFigma(withDark())).collections.find(c => c.name === 'Brand');
+    const accent = brand.variables.find(v => v.name === 'color/accent');
+    assert.equal(rgbHex(accent.values.dark), '#33ff99');
+    assert.equal(rgbHex(accent.values.light), '#00cc66');
+  });
+
+  it('labels neutrals lightest-first and keeps codeSyntax on the original CSS var', () => {
+    const brand = JSON.parse(formatFigma(mockDesign)).collections.find(c => c.name === 'Brand');
+    const n50 = brand.variables.find(v => v.name === 'color/neutral/50');
+    const n100 = brand.variables.find(v => v.name === 'color/neutral/100');
+    assert.equal(rgbHex(n50.values.light), '#666666');
+    assert.equal(n50.codeSyntax.WEB, 'var(--color-neutral-100)');
+    assert.equal(rgbHex(n100.values.light), '#333333');
+    assert.equal(n100.codeSyntax.WEB, 'var(--color-neutral-50)');
+  });
+
+  it('sets scopes and WEB codeSyntax on variables', () => {
+    const parsed = JSON.parse(formatFigma(mockDesign));
+    const brand = parsed.collections.find(c => c.name === 'Brand');
+    assert.deepEqual(brand.variables.find(v => v.name === 'color/primary').scopes, []);
+    const spacing = parsed.collections.find(c => c.name === 'Spacing');
+    const sp = spacing.variables.find(v => v.name === 'spacing/8');
+    assert.ok(sp.scopes.includes('GAP'));
+    assert.match(sp.codeSyntax.WEB, /^var\(--/);
+    assert.deepEqual(spacing.variables.find(v => v.name.startsWith('radius/')).scopes, ['CORNER_RADIUS']);
+  });
+
+  it('emits a Color collection of aliases whose targets exist, with Brand modes', () => {
+    const parsed = JSON.parse(formatFigma(withDark()));
+    const brand = parsed.collections.find(c => c.name === 'Brand');
+    const color = parsed.collections.find(c => c.name === 'Color');
+    assert.deepEqual(color.modes, brand.modes);
+    assert.ok(color.variables.length > 0);
+    for (const v of color.variables) {
+      for (const mode of color.modes) {
+        const a = v.values[mode];
+        assert.equal(a.type, 'VARIABLE_ALIAS');
+        assert.equal(a.collection, 'Brand');
+        assert.ok(brand.variables.some(b => b.name === a.name), `${v.name} -> ${a.name}`);
+      }
+    }
+    assert.equal(color.variables.find(v => v.name === 'color/action/primary').values.light.name, 'color/primary');
+    assert.equal(color.variables.find(v => v.name === 'color/surface/raised').values.light.name, 'color/background/1');
+  });
+
+  it('skips aliases whose target is missing', () => {
+    const bare = { ...mockDesign, colors: { ...mockDesign.colors, secondary: null, backgrounds: ['#ffffff'], text: ['#333333'] } };
+    const color = JSON.parse(formatFigma(bare)).collections.find(c => c.name === 'Color');
+    const names = color.variables.map(v => v.name);
+    assert.ok(!names.includes('color/action/secondary'));
+    assert.ok(!names.includes('color/surface/raised'));
+    assert.ok(!names.includes('color/text/muted'));
+    assert.ok(names.includes('color/surface/page'));
+  });
+
+  it('emits v2 text styles, effect styles and component hints', () => {
+    const parsed = JSON.parse(formatFigma(mockDesign));
+    assert.equal(parsed.version, 2);
+    assert.equal(parsed.meta.url, 'https://example.com');
+    assert.deepEqual(parsed.meta.fontFamilies, ['Inter', 'Playfair Display']);
+    const ts = Object.fromEntries(parsed.textStyles.map(t => [t.name, t]));
+    assert.equal(ts['Display/h1'].fontFamily, 'Playfair Display');
+    assert.equal(ts['Display/h1'].fontWeight, 700);
+    assert.equal(ts['Display/h1'].lineHeight, 57.6);
+    assert.equal(ts['Heading/h3'].lineHeight, null);
+    assert.equal(ts['Body/md'].lineHeight, 24);
+    const fx = Object.fromEntries(parsed.effectStyles.map(e => [e.name, e]));
+    assert.equal(fx['shadow/sm'].effects[0].type, 'DROP_SHADOW');
+    assert.equal(fx['shadow/sm'].effects[0].offset.y, 1);
+    assert.equal(fx['shadow/inner'].effects[0].type, 'INNER_SHADOW');
+    const primary = parsed.components.find(c => c.variant === 'primary');
+    assert.equal(primary.kind, 'button');
+    assert.deepEqual(primary.fill, { type: 'VARIABLE_ALIAS', collection: 'Color', name: 'color/action/primary' });
+    assert.equal(primary.paddingX, 20);
+    assert.equal(primary.radius, 4);
+    assert.equal(parsed.components.find(c => c.variant === 'ghost').fill, null);
   });
 });
 
