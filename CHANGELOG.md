@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+**A fuller Figma import.**
+
+- **Added: `figma_plan` MCP tool.** Returns a `use_figma` script (plus summary
+  and instructions) that builds the design system in a Figma file. It does
+  not call Figma itself.
+- **Added: Figma payload v2** (`export format:'figma'`, `*-figma-variables.json`):
+  a `Color` collection of semantic aliases onto Brand, text styles, effect
+  styles and Button hints. Variables carry scopes and `WEB` code syntax. The
+  plugin and `figma_plan` share one importer and re-imports update by name.
+- **Changed (Figma output only): neutrals are labelled lightest-first**
+  (`neutral/50` is the lightest); their code syntax still points at the
+  original CSS variable. Other formatters are unchanged.
+- **Changed: Brand primitives are hidden from Figma pickers** (`scopes: []`);
+  use the `Color` aliases.
+- **Fixed: the dark-mode accent** in Figma variables reused the light value.
+
 ## [13.3.2] — 2026-09-23
 
 **The live demo reads sites again.**

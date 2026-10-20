@@ -52,9 +52,18 @@ cat design-extract-output/*-design-language.md
    - Import `*-variables.css` into their stylesheet
    - Paste `*-shadcn-theme.css` into globals.css for shadcn/ui users
    - Import `*-theme.js` for React/CSS-in-JS projects
-   - Import `*-figma-variables.json` into Figma for designer handoff
+   - Push the design system into Figma (see "Push to Figma" below)
    - Open `*-preview.html` in a browser for a visual overview
    - Use the markdown file as context for AI-assisted development
+
+## Push to Figma
+
+When the user wants the extracted design system in a Figma file:
+
+1. With the designlang MCP server and the Figma MCP server connected: call `figma_plan` with the extraction's `job_id`, load the `figma-use` skill, call `create_session` for the target file, then pass the returned `script` unchanged as the code of `use_figma`. It creates variables (light/dark modes, semantic aliases), text styles, effect styles and, by default, a Button component. Re-running updates by name.
+2. Otherwise: open the Figma plugin in `figma-plugin/` and paste `*-figma-variables.json` (tick "Also create Button component" if wanted).
+
+Text styles fall back to Inter when the brand font is not installed; tell the user which styles did.
 
 ## Output Files (8)
 

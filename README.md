@@ -297,7 +297,7 @@ Each run writes 17+ files to `./design-extract-output/`. The headline outputs:
 | `*-design-tokens.json` | W3C DTCG tokens (primitive + semantic + composite layers) |
 | `*-tailwind.config.js` | Drop-in Tailwind theme |
 | `*-shadcn-theme.css` | shadcn/ui `globals.css` variables |
-| `*-figma-variables.json` | Figma Variables import (light + dark) |
+| `*-figma-variables.json` | Figma import: variables (light + dark, semantic aliases), text and effect styles, Button hints |
 | `*-variables.css` | CSS custom properties |
 | `*-anatomy.tsx` | Typed React stubs for every detected component + variants |
 | `*-motion-tokens.json` | Durations, easings, springs, scroll-linked flag; with `--motion-runtime` also choreography (stagger) + scroll recipes + observed durations |
@@ -485,7 +485,7 @@ designlang ships surfaces beyond the CLI:
 | **CLI** | `npx designlang <url>` | Main entry point. |
 | **VS Code extension** | [`vscode-extension/`](vscode-extension/) | "Extract design from URL" command + auto-inject into workspace. |
 | **Raycast extension** | [`raycast-extension/`](raycast-extension/) | Extract, score, and "copy CLI command" from Raycast. |
-| **Figma plugin** | [`figma-plugin/`](figma-plugin/) | Paste a URL inside Figma, get a full Variables collection. |
+| **Figma plugin** | [`figma-plugin/`](figma-plugin/) | Paste a URL or JSON inside Figma: variables with aliases, text and effect styles, optional Button. The MCP `figma_plan` tool produces the same import as a `use_figma` script. |
 | **GitHub Action** | [`github-action/`](github-action/) | "Design regression guard" — diffs tokens on every PR and comments. |
 | **Chrome extension** | [`chrome-extension/`](chrome-extension/) | One-click handoff from any tab (MV3, `activeTab` only). |
 | **Doctor** | `designlang doctor` | One-screen health check of the local install — Node, playwright, Chromium binary, output dir, network. Exits `1` if anything fails. |
