@@ -10,6 +10,7 @@ import { formatDtcgTokens } from '../formatters/dtcg-tokens.js';
 import { formatTailwindV4 } from '../formatters/tailwind-v4.js';
 import { formatShadcnTheme } from '../formatters/theme.js';
 import { formatFigma } from '../formatters/figma.js';
+import { importDesignSystem } from '../figma/importer.js';
 import { formatCssVars } from '../formatters/css-vars.js';
 import { formatDesignMd } from '../formatters/design-md.js';
 import { diffDesigns } from '../diff.js';
@@ -23,6 +24,9 @@ const EXPORTERS = {
   css: formatCssVars,
   'design-md': formatDesignMd,
 };
+
+// Past this the script gets unwieldy as a single use_figma argument.
+const FIGMA_SCRIPT_WARN_BYTES = 50 * 1024;
 
 function rpcError(code, message) {
   const e = new Error(message);
@@ -72,6 +76,18 @@ const TOOL_DEFS = [
     },
   },
   { name: 'get_findings', description: 'Design-system quality findings for a finished job: token lint (colour sprawl, scale consistency) and WCAG contrast summary.', inputSchema: jobIdOnly },
+  {
+    name: 'figma_plan',
+    description: 'Build a use_figma script that creates the finished job\'s design system in a Figma file: variables with light/dark modes and aliases, text styles, effect styles and optionally a Button component. Does not touch Figma itself; run the returned script with the Figma MCP use_figma tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'string' },
+        components: { type: 'boolean', description: 'also build a Button component set (default true)' },
+      },
+      required: ['job_id'],
+    },
+  },
   {
     name: 'export',
     description: 'Render a finished job in a target format.',
@@ -162,6 +178,28 @@ export function buildExtractTools({ extract, jobs } = {}) {
     get_findings(args) {
       const design = finished(args.job_id);
       return { lint: lint(design), accessibility: design.accessibility };
+    },
+    figma_plan(args) {
+      const design = finished(args.job_id);
+      const payload = JSON.parse(formatFigma(design));
+      const components = args.components !== false;
+      const script = `const payload=${JSON.stringify(payload)};\nreturn await (${importDesignSystem.toString()})(figma, payload, {components:${components}});`;
+      const count = (k) => (payload[k] || []).length;
+      const out = {
+        script,
+        summary: {
+          collections: payload.collections.map((c) => ({ name: c.name, variables: c.variables.length })),
+          textStyles: count('textStyles'),
+          effectStyles: count('effectStyles'),
+          buttonVariants: components ? payload.components.filter((c) => c.kind === 'button').length : 0,
+          bytes: Buffer.byteLength(script),
+        },
+        instructions: 'Load the figma-use skill, call create_session for the target file, then pass `script` unchanged as the `code` argument of use_figma. Re-running is safe: collections, variables and styles are updated by name. Text styles fall back to Inter when the brand font is not installed; the result lists them in fontFallbacks.',
+      };
+      if (out.summary.bytes > FIGMA_SCRIPT_WARN_BYTES) {
+        out.warning = `script is ${Math.round(out.summary.bytes / 1024)} KB; if use_figma rejects it, export format "figma" and paste the JSON into the designlang Figma plugin instead.`;
+      }
+      return out;
     },
     export(args) {
       const render = EXPORTERS[args.format];

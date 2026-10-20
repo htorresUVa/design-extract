@@ -119,6 +119,51 @@ describe('MCP live tools: reading a finished job', () => {
     }
     await assert.rejects(t.call('export', { job_id, format: 'pdf' }), /format must be one of/);
   });
+
+  it('figma_plan returns a script that runs against a figma global', async () => {
+    const { t, job_id } = await extracted();
+    const plan = await t.call('figma_plan', { job_id });
+    assert.ok(t.list().some((d) => d.name === 'figma_plan'));
+    assert.ok(plan.instructions.includes('use_figma'));
+    assert.ok(plan.summary.collections.length > 0);
+
+    const made = { collections: [], variables: [] };
+    const figma = {
+      currentPage: { children: [] },
+      variables: {
+        getLocalVariableCollectionsAsync: async () => made.collections,
+        getLocalVariablesAsync: async () => made.variables,
+        createVariableCollection: (name) => {
+          const c = { id: `c${made.collections.length}`, name, modes: [{ modeId: 'm0', name: 'x' }], renameMode() {}, addMode: () => 'm1' };
+          made.collections.push(c);
+          return c;
+        },
+        createVariable: (name, col) => {
+          const v = { id: `v${made.variables.length}`, name, variableCollectionId: col.id, setValueForMode() {}, setVariableCodeSyntax() {} };
+          made.variables.push(v);
+          return v;
+        },
+        createVariableAlias: (v) => ({ type: 'VARIABLE_ALIAS', id: v.id }),
+      },
+      getLocalTextStylesAsync: async () => [],
+      getLocalEffectStylesAsync: async () => [],
+      createTextStyle: () => ({}),
+      createEffectStyle: () => ({}),
+      listAvailableFontsAsync: async () => [],
+      loadFontAsync: async () => {},
+    };
+    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+    const result = await new AsyncFunction('figma', plan.script)(figma);
+    assert.equal(result.collections, plan.summary.collections.length);
+    assert.ok(result.variables > 0);
+  });
+
+  it('figma_plan errors like other tools for unknown or running jobs', async () => {
+    const t = buildExtractTools({ extract: () => new Promise(() => {}) });
+    await assert.rejects(t.call('figma_plan', { job_id: 'nope' }), /unknown job_id/);
+    const { job_id } = await t.call('extract_design', { url: 'example.com' });
+    await assert.rejects(t.call('figma_plan', { job_id }), /still running/);
+  });
 });
 
 describe('MCP server over stdio: v2', () => {
@@ -135,7 +180,7 @@ describe('MCP server over stdio: v2', () => {
     await client.connect(transport);
     try {
       const names = (await client.listTools()).tools.map((t) => t.name);
-      for (const n of ['extract_design', 'get_job_status', 'compute_drift', 'export', 'search_tokens']) {
+      for (const n of ['extract_design', 'get_job_status', 'compute_drift', 'export', 'figma_plan', 'search_tokens']) {
         assert.ok(names.includes(n), n);
       }
       const res = await client.callTool({ name: 'get_job_status', arguments: { job_id: 'nope' } });
