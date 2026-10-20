@@ -183,7 +183,7 @@ export function buildExtractTools({ extract, jobs } = {}) {
       const design = finished(args.job_id);
       const payload = JSON.parse(formatFigma(design));
       const components = args.components !== false;
-      const script = `const payload=${JSON.stringify(payload)};\nreturn await (${importDesignSystem.toString()})(figma, payload, {components:${components}});`;
+      const script = `const payload=${JSON.stringify(payload)};\nreturn await (${importDesignSystem.toString()})(figma, payload, {components:${components},specimen:true});`;
       const count = (k) => (payload[k] || []).length;
       const out = {
         script,

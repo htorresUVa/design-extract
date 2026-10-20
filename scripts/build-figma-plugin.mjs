@@ -34,7 +34,7 @@ figma.ui.onmessage = async (msg) => {
   if (msg.type !== "import") return;
 
   try {
-    const r = await importDesignSystem(figma, msg.data, { components: !!msg.components });
+    const r = await importDesignSystem(figma, msg.data, { components: !!msg.components, specimen: !!msg.specimen });
     figma.ui.postMessage({
       type: "done",
       variableCount: r.variables,

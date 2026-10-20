@@ -260,14 +260,15 @@ export async function importDesignSystem(figma, payload, opts) {
       comp.layoutMode = "HORIZONTAL";
       comp.primaryAxisAlignItems = "CENTER";
       comp.counterAxisAlignItems = "CENTER";
-      comp.paddingTop = comp.paddingBottom = h.paddingY || 0;
-      comp.paddingLeft = comp.paddingRight = h.paddingX || 0;
+      // Extracted padding is often 0 (it sits on an inner element); fall back to a usable default and bind only real values.
+      comp.paddingTop = comp.paddingBottom = h.paddingY || 8;
+      comp.paddingLeft = comp.paddingRight = h.paddingX || 16;
       comp.cornerRadius = h.radius || 0;
       const fill = paintFor(h.fill);
       comp.fills = fill ? [fill] : [];
 
-      const py = numberVar("spacing/", h.paddingY);
-      const px = numberVar("spacing/", h.paddingX);
+      const py = h.paddingY ? numberVar("spacing/", h.paddingY) : undefined;
+      const px = h.paddingX ? numberVar("spacing/", h.paddingX) : undefined;
       const rad = numberVar("radius/", h.radius);
       if (py) { comp.setBoundVariable("paddingTop", py); comp.setBoundVariable("paddingBottom", py); }
       if (px) { comp.setBoundVariable("paddingLeft", px); comp.setBoundVariable("paddingRight", px); }
@@ -278,12 +279,212 @@ export async function importDesignSystem(figma, payload, opts) {
       text.characters = "Button";
       const textPaint = paintFor(h.text);
       if (textPaint) text.fills = [textPaint];
+      // A button without a fill would be invisible; outline it in its text colour.
+      if (!fill && textPaint) { comp.strokes = [textPaint]; comp.strokeWeight = 1; comp.strokeAlign = "INSIDE"; }
       comp.appendChild(text);
       comps.push(comp);
     }
     const set = figma.combineAsVariants(comps, figma.currentPage);
     set.name = "Button";
     result.components = comps.length;
+  }
+
+
+  // --- Specimen board (opt-in): draws the imported system on the canvas, since variables and styles only live in Figma's panels ---
+  async function buildSpecimen(figma, o) {
+    const names = Object.assign({ brand: "Brand", color: "Color" }, o.collections || {});
+    const stylePrefix = o.stylePrefix || "";
+    const cols = await figma.variables.getLocalVariableCollectionsAsync();
+    const findCollection = (n) => cols.find((c) => c.name === n);
+    const hex = (c) => "#" + [c.r, c.g, c.b].map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
+    const lum = (c) => {
+      const f = (x) => (x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4));
+      return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+    };
+    const contrast = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    async function resolveColor(variable, depth) {
+      const v = variable.valuesByMode[Object.keys(variable.valuesByMode)[0]];
+      if (v && v.type === "VARIABLE_ALIAS" && (depth || 0) < 8) return resolveColor(await figma.variables.getVariableByIdAsync(v.id), (depth || 0) + 1);
+      return v;
+    }
+    const bindPaint = (variable) => figma.variables.setBoundVariableForPaint({ type: "SOLID", color: { r: 0, g: 0, b: 0 } }, "color", variable);
+    const solid = (c) => ({ type: "SOLID", color: { r: c.r, g: c.g, b: c.b } });
+    const ink = { r: 0.1, g: 0.1, b: 0.1 };
+    const mute = { r: 0.4, g: 0.4, b: 0.4 };
+
+    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    await figma.loadFontAsync({ family: "Inter", style: "Medium" });
+    const label = (str, size, style, color) => {
+      const t = figma.createText();
+      t.fontName = { family: "Inter", style };
+      t.fontSize = size;
+      t.characters = str;
+      t.fills = [solid(color)];
+      return t;
+    };
+
+    // Preview card: the site's own surface + text colours when they contrast, else plain white.
+    const colorCol = findCollection(names.color);
+    const colorVar = async (n) => {
+      if (!colorCol) return undefined;
+      for (const id of colorCol.variableIds) {
+        const v = await figma.variables.getVariableByIdAsync(id);
+        if (v.name === n) return v;
+      }
+      return undefined;
+    };
+    const surfaceVar = await colorVar("color/surface/page");
+    const textVar = await colorVar("color/text/primary");
+    let pv = { cardFill: solid({ r: 1, g: 1, b: 1 }), textPaint: solid(ink), labelColor: mute, fallback: true };
+    if (surfaceVar && textVar) {
+      const sc = await resolveColor(surfaceVar);
+      const tc = await resolveColor(textVar);
+      if (sc && tc && contrast(sc, tc) >= 3) pv = { cardFill: bindPaint(surfaceVar), textPaint: bindPaint(textVar), labelColor: lum(sc) < 0.4 ? { r: 0.75, g: 0.75, b: 0.75 } : mute, fallback: false };
+    }
+
+    const wrap = figma.createAutoLayout("VERTICAL");
+    wrap.name = o.title + " — specimen";
+    for (const old of figma.currentPage.children) if (old !== wrap && old.type === "FRAME" && old.name === wrap.name) old.remove();
+    wrap.itemSpacing = 56;
+    wrap.paddingTop = wrap.paddingBottom = wrap.paddingLeft = wrap.paddingRight = 64;
+    wrap.fills = [solid({ r: 0.96, g: 0.96, b: 0.95 })];
+    wrap.resize(1280, 100);
+    wrap.primaryAxisSizingMode = "AUTO";
+
+    const section = (title) => {
+      const s = figma.createAutoLayout("VERTICAL");
+      s.name = title;
+      s.itemSpacing = 20;
+      s.fills = [];
+      wrap.appendChild(s);
+      s.layoutSizingHorizontal = "FILL";
+      s.appendChild(label(title, 14, "Medium", mute));
+      return s;
+    };
+    const makeCard = (name, direction) => {
+      const card = figma.createAutoLayout(direction);
+      card.name = name;
+      card.itemSpacing = direction === "VERTICAL" ? 24 : 16;
+      card.paddingTop = card.paddingBottom = card.paddingLeft = card.paddingRight = 32;
+      card.cornerRadius = 8;
+      card.fills = [pv.cardFill];
+      return card;
+    };
+
+    const stats = { swatches: 0, textStyles: 0, effectStyles: 0, buttons: 0 };
+    wrap.appendChild(label(o.title, 36, "Medium", ink));
+
+    // Colour swatches, bound to the variables.
+    for (const [title, colName] of [["Colour — semantic", names.color], ["Colour — brand", names.brand]]) {
+      const col = findCollection(colName);
+      if (!col) continue;
+      const sec = section(title);
+      const row = figma.createAutoLayout("HORIZONTAL");
+      row.name = colName;
+      row.itemSpacing = 16;
+      row.counterAxisSpacing = 16;
+      row.layoutWrap = "WRAP";
+      row.fills = [];
+      sec.appendChild(row);
+      row.layoutSizingHorizontal = "FILL";
+      for (const id of col.variableIds) {
+        const v = await figma.variables.getVariableByIdAsync(id);
+        const c = v.resolvedType === "COLOR" ? await resolveColor(v) : undefined;
+        if (!c) continue;
+        const card = figma.createAutoLayout("VERTICAL");
+        card.itemSpacing = 6;
+        card.fills = [];
+        const sw = figma.createRectangle();
+        sw.resize(120, 64);
+        sw.cornerRadius = 4;
+        sw.fills = [bindPaint(v)];
+        sw.strokes = [solid({ r: 0.85, g: 0.85, b: 0.85 })];
+        sw.strokeWeight = 1;
+        card.appendChild(sw);
+        card.appendChild(label(v.name.replace(/^color\//, ""), 11, "Medium", ink));
+        card.appendChild(label(hex(c), 11, "Regular", mute));
+        row.appendChild(card);
+        stats.swatches++;
+      }
+    }
+
+    // Type: every text style, largest first.
+    const styles = (await figma.getLocalTextStylesAsync()).filter((s) => s.name.indexOf(stylePrefix) === 0).sort((a, b) => b.fontSize - a.fontSize);
+    if (styles.length > 0) {
+      const sec = section("Typography");
+      const card = makeCard("Type samples", "VERTICAL");
+      sec.appendChild(card);
+      card.layoutSizingHorizontal = "FILL";
+      for (const s of styles) {
+        try { await figma.loadFontAsync(s.fontName); } catch (e) { continue; }
+        const item = figma.createAutoLayout("VERTICAL");
+        item.itemSpacing = 4;
+        item.fills = [];
+        card.appendChild(item);
+        item.layoutSizingHorizontal = "FILL";
+        item.appendChild(label(s.name.slice(stylePrefix.length) + " · " + Math.round(s.fontSize * 10) / 10 + "px", 11, "Regular", pv.labelColor));
+        const t = figma.createText();
+        t.characters = s.fontSize > 100 ? "Aa Bb Cc" : "The quick brown fox jumps over the lazy dog";
+        await t.setTextStyleIdAsync(s.id);
+        t.fills = [pv.textPaint];
+        t.textAutoResize = "HEIGHT";
+        item.appendChild(t);
+        t.layoutSizingHorizontal = "FILL";
+        stats.textStyles++;
+      }
+    }
+
+    // Effects.
+    const effects = (await figma.getLocalEffectStylesAsync()).filter((s) => s.name.indexOf(stylePrefix) === 0);
+    if (effects.length > 0) {
+      const sec = section("Elevation");
+      const row = figma.createAutoLayout("HORIZONTAL");
+      row.itemSpacing = 40;
+      row.counterAxisSpacing = 40;
+      row.layoutWrap = "WRAP";
+      row.paddingTop = row.paddingBottom = row.paddingLeft = row.paddingRight = 16;
+      row.fills = [];
+      sec.appendChild(row);
+      row.layoutSizingHorizontal = "FILL";
+      for (const s of effects) {
+        const item = figma.createAutoLayout("VERTICAL");
+        item.itemSpacing = 10;
+        item.fills = [];
+        const box = figma.createRectangle();
+        box.resize(140, 90);
+        box.cornerRadius = 8;
+        box.fills = [solid({ r: 1, g: 1, b: 1 })];
+        box.effectStyleId = s.id;
+        item.appendChild(box);
+        item.appendChild(label(s.name.slice(stylePrefix.length), 11, "Medium", ink));
+        row.appendChild(item);
+        stats.effectStyles++;
+      }
+    }
+
+    // Components: instances of the Button set, if one was built on this page.
+    const set = figma.currentPage.children.find((n) => n.type === "COMPONENT_SET" && n.name === "Button");
+    if (set) {
+      const sec = section("Components");
+      const card = makeCard("Buttons", "HORIZONTAL");
+      // Buttons may be white or transparent; a plain white card would hide them.
+      if (pv.fallback) card.fills = [solid({ r: 0.85, g: 0.85, b: 0.85 })];
+      sec.appendChild(card);
+      for (const variant of set.children) {
+        card.appendChild(variant.createInstance());
+        stats.buttons++;
+      }
+    }
+
+    wrap.x = 0;
+    wrap.y = 0;
+    if (set) { set.x = 0; set.y = wrap.height + 120; }
+    return Object.assign({ specimenId: wrap.id }, stats);
+  }
+
+  if (opts.specimen) {
+    const host = payload.meta && payload.meta.url ? String(payload.meta.url).replace(/^https?:\/\//, "").split("/")[0] : "designlang";
+    result.specimen = await buildSpecimen(figma, { title: opts.title || host, stylePrefix: opts.stylePrefix || "", collections: opts.collections });
   }
 
   return result;

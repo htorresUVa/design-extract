@@ -153,7 +153,9 @@ describe('MCP live tools: reading a finished job', () => {
       loadFontAsync: async () => {},
     };
     const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-    const result = await new AsyncFunction('figma', plan.script)(figma);
+    // The specimen board needs far more of the Plugin API; tests/figma-plugin.test.js covers it.
+    assert.ok(plan.script.includes('specimen:true'));
+    const result = await new AsyncFunction('figma', plan.script.replace('specimen:true', 'specimen:false'))(figma);
     assert.equal(result.collections, plan.summary.collections.length);
     assert.ok(result.variables > 0);
   });

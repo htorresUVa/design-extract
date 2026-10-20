@@ -44,6 +44,9 @@
     <label style="display: flex; gap: 6px; align-items: center; margin-top: 12px; font-weight: 400;">
       <input type="checkbox" id="components" /> Also create Button component
     </label>
+    <label style="display: flex; gap: 6px; align-items: center; margin-top: 6px; font-weight: 400;">
+      <input type="checkbox" id="specimen" checked /> Draw a specimen board on the page
+    </label>
 
     <div class="row">
       <button id="run">Import tokens</button>
@@ -68,6 +71,7 @@
 
       const status = document.getElementById("status");
       const wantComponents = () => document.getElementById("components").checked;
+      const wantSpecimen = () => document.getElementById("specimen").checked;
       document.getElementById("cancel").onclick = () => parent.postMessage({ pluginMessage: { type: "cancel" } }, "*");
 
       document.getElementById("run").onclick = async () => {
@@ -78,7 +82,7 @@
           if (!raw) { status.textContent = "Paste the Figma Variables JSON first."; return; }
           try {
             const parsed = JSON.parse(raw);
-            parent.postMessage({ pluginMessage: { type: "import", data: parsed, components: wantComponents() } }, "*");
+            parent.postMessage({ pluginMessage: { type: "import", data: parsed, components: wantComponents(), specimen: wantSpecimen() } }, "*");
           } catch (e) { status.textContent = "Invalid JSON: " + e.message; }
         } else {
           const url = document.getElementById("url").value.trim();
@@ -87,7 +91,7 @@
             const res = await fetch(`https://designlang.manavaryasingh.com/api/extract?format=figma&url=${encodeURIComponent(url)}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
-            parent.postMessage({ pluginMessage: { type: "import", data, components: wantComponents() } }, "*");
+            parent.postMessage({ pluginMessage: { type: "import", data, components: wantComponents(), specimen: wantSpecimen() } }, "*");
           } catch (e) {
             status.textContent = "Failed: " + e.message + ". Try pasting JSON instead.";
           }

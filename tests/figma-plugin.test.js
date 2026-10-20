@@ -17,9 +17,14 @@ function makeFigma({ fonts = ['Inter|Regular', 'Inter|Medium', 'Inter|Semi Bold'
   const messages = [];
   const page = { children: [], appendChild(n) { this.children.push(n); } };
   const node = (type) => ({
-    type, fills: [], children: [], bound: {},
-    appendChild(n) { this.children.push(n); },
+    type, fills: [], strokes: [], children: [], bound: {},
+    // Like Figma, appending moves a node off the page it was created on.
+    appendChild(n) { page.children = page.children.filter((c) => c !== n); this.children.push(n); },
     setBoundVariable(k, v) { this.bound[k] = v; },
+    resize() {},
+    remove() { page.children = page.children.filter((c) => c !== this); },
+    createInstance() { return node('INSTANCE'); },
+    async setTextStyleIdAsync(id) { this.textStyleId = id; },
   });
   const figma = {
     showUI() {},
@@ -31,6 +36,7 @@ function makeFigma({ fonts = ['Inter|Regular', 'Inter|Medium', 'Inter|Semi Bold'
       createVariableCollection(name) {
         const col = {
           id: `c${collections.length}`, name, variables: [], modes: [{ modeId: 'm0', name: 'Mode 1' }],
+          get variableIds() { return this.variables.map((v) => v.id); },
           renameMode(id, n) { this.modes.find((m) => m.modeId === id).name = n; },
           addMode(n) { const modeId = `m${this.modes.length}`; this.modes.push({ modeId, name: n }); return modeId; },
         };
@@ -39,7 +45,7 @@ function makeFigma({ fonts = ['Inter|Regular', 'Inter|Medium', 'Inter|Semi Bold'
       },
       createVariable(name, col, type) {
         const v = {
-          id: `v${variables.length}`, name, type, variableCollectionId: col.id, values: {}, scopes: ['ALL_SCOPES'], codeSyntax: {},
+          id: `v${variables.length}`, name, type, resolvedType: type, variableCollectionId: col.id, values: {}, scopes: ['ALL_SCOPES'], codeSyntax: {},
           setValueForMode(id, val) { this.values[id] = val; },
           setVariableCodeSyntax(platform, val) { this.codeSyntax[platform] = val; },
         };
@@ -50,18 +56,21 @@ function makeFigma({ fonts = ['Inter|Regular', 'Inter|Medium', 'Inter|Semi Bold'
       },
       createVariableAlias: (v) => ({ type: 'VARIABLE_ALIAS', id: v.id }),
       setBoundVariableForPaint: (paint, field, v) => ({ ...paint, boundVariables: { [field]: { type: 'VARIABLE_ALIAS', id: v.id } } }),
+      getVariableByIdAsync: async (id) => variables.find((v) => v.id === id),
       getLocalVariableCollectionsAsync: async () => collections.slice(),
       getLocalVariablesAsync: async () => variables.slice(),
     },
     getLocalTextStylesAsync: async () => textStyles.slice(),
     getLocalEffectStylesAsync: async () => effectStyles.slice(),
-    createTextStyle() { const s = { type: 'TEXT' }; textStyles.push(s); return s; },
-    createEffectStyle() { const s = { type: 'EFFECT' }; effectStyles.push(s); return s; },
+    createTextStyle() { const s = { type: 'TEXT', id: `ts${textStyles.length}` }; textStyles.push(s); return s; },
+    createEffectStyle() { const s = { type: 'EFFECT', id: `es${effectStyles.length}` }; effectStyles.push(s); return s; },
     // Only Inter can be loaded, like a file where the brand font isn't installed.
     loadFontAsync: async (f) => { if (f.family !== 'Inter') throw new Error(`font not loadable: ${f.family}`); },
     listAvailableFontsAsync: async () => fonts.map((f) => { const [family, style] = f.split('|'); return { fontName: { family, style } }; }),
     createComponent() { const n = node('COMPONENT'); page.children.push(n); return n; },
     createText() { return node('TEXT'); },
+    createRectangle() { return node('RECTANGLE'); },
+    createAutoLayout() { const n = node('FRAME'); page.children.push(n); return n; },
     combineAsVariants(comps, parent) {
       const set = node('COMPONENT_SET');
       set.children = comps;
@@ -182,6 +191,23 @@ describe('figma importer v2', () => {
     assert.equal(set.name, 'Button');
     const fill = set.children[0].fills[0];
     assert.ok(fill.boundVariables.color.id);
+  });
+
+  it('draws a specimen board only when asked, and replaces it on re-run', async () => {
+    const payload = JSON.parse(formatFigma(v2Design));
+    const off = makeFigma();
+    assert.equal((await importDesignSystem(off.figma, payload, {})).specimen, undefined);
+
+    const on = makeFigma();
+    const res = await importDesignSystem(on.figma, payload, { components: true, specimen: true });
+    assert.ok(res.specimen.swatches > 0);
+    assert.equal(res.specimen.textStyles, 2);
+    assert.equal(res.specimen.effectStyles, 1);
+    assert.equal(res.specimen.buttons, 1);
+    const boards = () => on.page.children.filter((n) => n.type === 'FRAME' && /specimen/.test(n.name));
+    assert.equal(boards().length, 1);
+    await importDesignSystem(on.figma, payload, { components: true, specimen: true });
+    assert.equal(boards().length, 1);
   });
 
   it('still imports v1 payloads without v2 keys', async () => {

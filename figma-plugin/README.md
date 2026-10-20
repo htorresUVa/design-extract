@@ -12,6 +12,7 @@ Two entry points:
 - **Variables** — `Brand` (colour primitives, hidden from pickers via empty `scopes`), `Color` (semantic aliases onto Brand, same light/dark modes), `Typography` and `Spacing`. Every variable carries scopes and a `WEB` code syntax such as `var(--spacing-8)`.
 - **Text styles** and **effect styles** (shadows) from the payload.
 - Optionally a **Button** component set (tick the checkbox), with fills, padding and radius bound to variables.
+- A **specimen board** on the current page (on by default): colour swatches, every text style, shadows and the Button, so the import is visible on the canvas and not only in Figma's Variables and Styles panels. Re-importing replaces the board.
 
 Re-importing updates collections, variables and styles by name instead of duplicating them.
 

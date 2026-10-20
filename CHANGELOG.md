@@ -11,6 +11,13 @@
   a `Color` collection of semantic aliases onto Brand, text styles, effect
   styles and Button hints. Variables carry scopes and `WEB` code syntax. The
   plugin and `figma_plan` share one importer and re-imports update by name.
+- **Added: specimen board.** The import draws swatches, type samples, shadows and
+  the Button on the page (plugin checkbox, on by default; `figma_plan` always).
+  Variables and styles otherwise only show in Figma's panels, so an import looked
+  empty. Buttons fall back to 16/8px padding and an outline when the extraction
+  has none.
+- **Fixed: names Figma rejects.** `font/size/13.3333` and 0px sizes are no longer
+  emitted, and radii that share a label no longer collide.
 - **Changed (Figma output only): neutrals are labelled lightest-first**
   (`neutral/50` is the lightest); their code syntax still points at the
   original CSS variable. Other formatters are unchanged.
