@@ -90,8 +90,12 @@ export function formatFigma(design) {
     spacingVars.push({ name: `spacing/${v}`, type: 'FLOAT', values: { default: v }, scopes: SPACING_SCOPES, codeSyntax: { WEB: `var(--spacing-${v})` } });
   }
   // Border radius
+  // Extraction can yield one label for several values; Figma needs unique names, so later ones get the value appended.
+  const radiusNames = new Set();
   for (const r of design.borders.radii) {
-    spacingVars.push({ name: `radius/${r.label}`, type: 'FLOAT', values: { default: r.value }, scopes: ['CORNER_RADIUS'], codeSyntax: { WEB: `var(--radius-${r.label})` } });
+    const name = radiusNames.has(`radius/${r.label}`) ? `radius/${r.label}-${r.value}` : `radius/${r.label}`;
+    radiusNames.add(name);
+    spacingVars.push({ name, type: 'FLOAT', values: { default: r.value }, scopes: ['CORNER_RADIUS'], codeSyntax: { WEB: `var(--radius-${r.label})` } });
   }
   if (spacingVars.length > 0) {
     collections.push({ name: 'Spacing', modes: ['default'], variables: spacingVars });

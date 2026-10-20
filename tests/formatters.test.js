@@ -454,6 +454,15 @@ describe('formatPreview', () => {
 // ── formatFigma ─────────────────────────────────────────────────
 
 describe('formatFigma', () => {
+  it('keeps variable names unique when two radii share a label', () => {
+    const design = { ...mockDesign, borders: { ...mockDesign.borders, radii: [
+      { label: 'lg', value: 12 }, { label: 'lg', value: 16 },
+    ] } };
+    const names = JSON.parse(formatFigma(design)).collections.flatMap(c => c.variables.map(v => v.name));
+    assert.equal(new Set(names).size, names.length);
+    assert.ok(names.includes('radius/lg') && names.includes('radius/lg-16'));
+  });
+
   it('emits only names Figma accepts: no "." in variables, no 0px sizes or styles', () => {
     const design = { ...mockDesign, typography: { ...mockDesign.typography, scale: [
       { size: 13.3333, weight: '400', lineHeight: 'normal' },
